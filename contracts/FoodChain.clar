@@ -682,3 +682,11 @@
         }
     )
 )
+
+(define-constant cold-low 0)
+(define-constant cold-high 4)
+(define-map cold-chain-logs uint (list 20 { start-block: uint, end-block: uint, min-temp: int, max-temp: int, avg-temp: int, breach: bool, submitter: principal }))
+(define-read-only (get-cold-chain-logs (product-id uint)) (default-to (list) (map-get? cold-chain-logs product-id)))
+(define-private (no-breach-acc (entry { start-block: uint, end-block: uint, min-temp: int, max-temp: int, avg-temp: int, breach: bool, submitter: principal }) (acc bool)) (and acc (not (get breach entry))))
+(define-read-only (check-cold-chain-compliance (product-id uint)) (match (map-get? products product-id) product (let ((logs (default-to (list) (map-get? cold-chain-logs product-id)))) (ok (fold no-breach-acc logs true))) err-not-found))
+(define-public (record-cold-chain-summary (product-id uint) (start-block uint) (end-block uint) (min-temp int) (max-temp int) (avg-temp int)) (match (map-get? products product-id) product (begin (asserts! (is-eq tx-sender (get current-owner product)) err-unauthorized) (asserts! (<= start-block end-block) err-invalid-input) (asserts! (<= end-block stacks-block-height) err-invalid-input) (asserts! (<= min-temp max-temp) err-invalid-input) (let ((breach (or (< min-temp cold-low) (> max-temp cold-high))) (entry { start-block: start-block, end-block: end-block, min-temp: min-temp, max-temp: max-temp, avg-temp: avg-temp, breach: breach, submitter: tx-sender }) (current (default-to (list) (map-get? cold-chain-logs product-id))) (updated (unwrap! (as-max-len? (append current entry) u20) err-invalid-input))) (map-set cold-chain-logs product-id updated) (ok true))) err-not-found))
